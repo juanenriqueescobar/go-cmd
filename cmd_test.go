@@ -4,6 +4,7 @@ package cmd_test
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io/ioutil"
 	"os"
@@ -1021,6 +1022,37 @@ TIMER:
 	s2 := p.Status()
 	if diff := deep.Equal(s1, s2); diff != nil {
 		t.Error(diff)
+	}
+}
+
+func TestDoneWithContext(t *testing.T) {
+	// Count to 10 sleeping 1s between counts
+	p := cmd.NewCmd("./test/count-and-sleep", "10", "1")
+	// kill the command after 1 second
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	// start command
+	gotStatus := <-p.StartWithContext(ctx, nil)
+
+	if ctx.Err() == nil || ctx.Err() != context.DeadlineExceeded {
+		t.Error("timeout not work")
+	}
+
+	expectStatus := cmd.Status{
+		Cmd:      "./test/count-and-sleep",
+		PID:      gotStatus.PID, // nondeterministic
+		Complete: false,
+		Exit:     -1,
+		Error:    errors.New("signal: killed"),
+		Runtime:  gotStatus.Runtime, // nondeterministic
+		Stdout:   []string{"1"},
+		Stderr:   []string{},
+		StartTs:  gotStatus.StartTs, // nondeterministic
+		StopTs:   gotStatus.StopTs,  // nondeterministic
+	}
+
+	if diffs := deep.Equal(gotStatus, expectStatus); diffs != nil {
+		t.Error(diffs)
 	}
 }
 

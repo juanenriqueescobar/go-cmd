@@ -44,6 +44,7 @@ package cmd
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -263,6 +264,18 @@ func (c *Cmd) Start() <-chan Status {
 
 // StartWithStdin is the same as Start but uses in for STDIN.
 func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
+	return c.StartWithContext(context.Background(), in)
+}
+
+// StartWithContext is the same as StartWithStdin but can receive a context.Context
+//
+//   ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+//   defer cancel()
+//   status := <- myCmd.StartWithContext(ctx, nil)
+//   if ctx.Err() != context.DeadlineExceeded {
+//      ... do something with the error!
+//   }
+func (c *Cmd) StartWithContext(ctx context.Context, in io.Reader) <-chan Status {
 	c.Lock()
 	defer c.Unlock()
 
@@ -271,7 +284,7 @@ func (c *Cmd) StartWithStdin(in io.Reader) <-chan Status {
 	}
 
 	c.statusChan = make(chan Status, 1)
-	go c.run(in)
+	go c.run(ctx, in)
 	return c.statusChan
 }
 
@@ -371,7 +384,7 @@ func (c *Cmd) Done() <-chan struct{} {
 
 // --------------------------------------------------------------------------
 
-func (c *Cmd) run(in io.Reader) {
+func (c *Cmd) run(ctx context.Context, in io.Reader) {
 	defer func() {
 		c.statusChan <- c.Status() // unblocks Start if caller is waiting
 		close(c.doneChan)
@@ -380,7 +393,7 @@ func (c *Cmd) run(in io.Reader) {
 	// //////////////////////////////////////////////////////////////////////
 	// Setup command
 	// //////////////////////////////////////////////////////////////////////
-	cmd := exec.Command(c.Name, c.Args...)
+	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
 	if in != nil {
 		cmd.Stdin = in
 	}
